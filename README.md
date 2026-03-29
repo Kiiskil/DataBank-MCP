@@ -1,5 +1,7 @@
 # Datapankki-MCP (ZT-RAG)
 
+GitHub-repo: **[Kiiskil/DataBank-MCP](https://github.com/Kiiskil/DataBank-MCP)** (sama projekti; repossa englanninkertainen nimi).
+
 Erillinen repo: **EPUB/PDF-tietopankki**, hybridihaku (BM25 + embeddings), MCP-stdio (`zt_*`-työkalut) ja `zt_cli` Podmanille.
 
 Sisarrepo: **Coder-MCP-server** (`../Coder-MCP-server`) — DevWorkflow + Arch MCP; ei sisällä tätä RAG-pinoa. Ks. [docs/CODER_MCP_SERVER.md](docs/CODER_MCP_SERVER.md).
@@ -14,9 +16,47 @@ Sisarrepo: **Coder-MCP-server** (`../Coder-MCP-server`) — DevWorkflow + Arch M
 
 ## Vaatimukset
 
-- Python 3.12+, `ANTHROPIC_API_KEY`
-- Podman tai Docker (image-buildiin)
-- Raskaat riippuvuudet: `requirements.txt` + `requirements-nli.txt` (`transformers` / NLI-vähimmäisversio). Täysi lista: [docs/PERF_ENV.md](docs/PERF_ENV.md).
+- **`ANTHROPIC_API_KEY`** ympäristömuuttujana (kyselyt / `zt_query`; ingest ei välttämättä tarvitse sitä). Älä committaa avainta — käytä `${env:ANTHROPIC_API_KEY}` MCP-konffissa.
+- **Podman** tai **Docker** (julkaistu image tai paikallinen build).
+- **Python 3.12+** vain jos ajat koodia **paikallisesti** (ks. [Kehitys (ilman konttia)](#kehitys-ilman-konttia)); pelkkä kontti + `podman run` ei vaadi asennettua Pythonia hostilla.
+- Raskaat riippuvuudet kontissa / venvissä: `requirements.txt` + `requirements-nli.txt`. Täysi lista: [docs/PERF_ENV.md](docs/PERF_ENV.md).
+
+## Käyttöönotto (pika)
+
+1. **Kloonaa** (tai lataa release) ja luo tietopankkihakemisto, esim. `Databank/AI/` ja sinne EPUB/PDF-tiedostoja. Ks. [docs/DATABANK.md](docs/DATABANK.md).
+2. **API-avain** (kyselyihin): aseta `ANTHROPIC_API_KEY` shellissä tai käyttöjärjestelmän ympäristömuuttujissa ennen Cursorin / `podman run` -komentoja.
+3. **Image** — joko julkaistu (kun repossa on tag `v*`, ks. [docs/JULKAISU_JA_INGEST_PROFIILIT.md](docs/JULKAISU_JA_INGEST_PROFIILIT.md)) tai [paikallinen build](#image).
+
+**Esimerkki: GHCR-image + CLI** (korvaa `0.1.0` sopivalla tagilla, jos eri):
+
+```bash
+podman pull ghcr.io/kiiskil/databank-mcp:cpu
+export ANTHROPIC_API_KEY=...   # älä tallenna repoon
+
+podman run --rm -e ZT_DATA_DIR=/data \
+  -v "$PWD:/workspace:ro,Z" -v zt-rag-data-demo:/data \
+  --entrypoint python ghcr.io/kiiskil/databank-mcp:cpu \
+  -m devworkflow.zt_cli sync /workspace/Databank/AI
+
+podman run --rm -e ZT_DATA_DIR=/data \
+  -v "$PWD:/workspace:ro,Z" -v zt-rag-data-demo:/data \
+  --entrypoint python ghcr.io/kiiskil/databank-mcp:cpu \
+  -m devworkflow.zt_cli ingest
+
+podman run --rm -e ANTHROPIC_API_KEY -e ZT_DATA_DIR=/data \
+  -v "$PWD:/workspace:ro,Z" -v zt-rag-data-demo:/data \
+  --entrypoint python ghcr.io/kiiskil/databank-mcp:cpu \
+  -m devworkflow.zt_cli status
+
+podman run --rm -e ANTHROPIC_API_KEY -e ZT_DATA_DIR=/data \
+  -v "$PWD:/workspace:ro,Z" -v zt-rag-data-demo:/data \
+  --entrypoint python ghcr.io/kiiskil/databank-mcp:cpu \
+  -m devworkflow.zt_cli query "Esimerkkikysymys korpuksesta"
+```
+
+Sama ketju **paikallisella imagella**: vaihda `ghcr.io/kiiskil/databank-mcp:cpu` → `localhost/datapankki-mcp:latest`.
+
+**Cursor:** kopioi [`zt_cursor_mcp.json`](zt_cursor_mcp.json) tai käytä repossa olevaa [`.cursor/mcp.json`](.cursor/mcp.json) pohjana — säädä polut, volyymin nimi ja image (`localhost/...` tai `ghcr.io/...`). MCP-työkalut: [Työkalut (MCP)](#työkalut-mcp).
 
 ## Image
 
@@ -53,8 +93,8 @@ podman build -f Dockerfile.rocm -t localhost/datapankki-mcp:rocm .
 ## Cursor
 
 - Esimerkki: [`zt_cursor_mcp.json`](zt_cursor_mcp.json) → kopioi `.cursor/mcp.json`iin tai globaaliin.
-- **Projektissa:** repossa on [`.cursor/mcp.json`](.cursor/mcp.json) — **Databank AI GPU-ingest** (`zt-rag-ingest-gpu-databank-ai`). Avaa workspace **datapankki-mcp** -juuresta, rakenna `localhost/datapankki-mcp:rocm`, yhdistä tarvittaessa sama lohko `~/.cursor/mcp.json`:iin.
-- Image-nimi oletuksena **`localhost/datapankki-mcp:latest`** (vastaava kuin `podman build`).
+- **Projektissa:** repossa on [`.cursor/mcp.json`](.cursor/mcp.json) — useita palvelimia (esim. **Databank AI ingest GPU**, **Databank AI**). Polut ja `localhost/datapankki-mcp:*` -imaget ovat kehitysympäristökohtaisia; julkaistu image: [Image](#image) / [docs/JULKAISU_JA_INGEST_PROFIILIT.md](docs/JULKAISU_JA_INGEST_PROFIILIT.md).
+- Paikallisen buildin image-nimet: **`localhost/datapankki-mcp:latest`** (CPU) ja **`localhost/datapankki-mcp:rocm`** (GPU-ingest).
 
 ## Työkalut (MCP)
 
