@@ -7,7 +7,7 @@
 | Kysely-MCP (`zt_mcp_server`, CPU-torch) | `localhost/datapankki-mcp:latest` |
 | Ingest-GPU-MCP (`zt_ingest_mcp_server`, ROCm) | `localhost/datapankki-mcp:rocm` |
 
-Projektin [`.cursor/mcp.json`](../.cursor/mcp.json) käyttää näitä. Jos koneellasi on vanha tagi `localhost/zt-rag-mcp:latest`, voit säilyttää sen rinnalla:
+Esimerkkikonffi [`zt_mcp_multibank.example.json`](../zt_mcp_multibank.example.json) käyttää näitä. Jos koneellasi on vanha tagi `localhost/zt-rag-mcp:latest`, voit säilyttää sen rinnalla:
 
 ```bash
 podman tag localhost/datapankki-mcp:latest localhost/zt-rag-mcp:latest

@@ -56,7 +56,7 @@ podman run --rm -e ANTHROPIC_API_KEY -e ZT_DATA_DIR=/data \
 
 Sama ketju **paikallisella imagella**: vaihda `ghcr.io/kiiskil/databank-mcp:cpu` → `localhost/datapankki-mcp:latest`.
 
-**Cursor:** kopioi [`zt_cursor_mcp.json`](zt_cursor_mcp.json) tai käytä repossa olevaa [`.cursor/mcp.json`](.cursor/mcp.json) pohjana — säädä polut, volyymin nimi ja image (`localhost/...` tai `ghcr.io/...`). MCP-työkalut: [Työkalut (MCP)](#työkalut-mcp).
+**Cursor:** ks. [Cursor](#cursor). MCP-työkalut: [Työkalut (MCP)](#työkalut-mcp).
 
 ## Image
 
@@ -86,14 +86,16 @@ podman build -f Dockerfile.rocm -t localhost/datapankki-mcp:rocm .
 
 2. **MCP-palvelin:** `python -m devworkflow.zt_ingest_mcp_server` — työkalut: `zt_sync_sources`, `zt_ingest`, `zt_verify_coverage`, `zt_status` (**ei** `zt_query`). Käyttää samaa `ZT_DATA_DIR` / Podman-volyymia kuin varsainen kysely-MCP, jotta indeksi on jaettu.
 
-3. **Cursor:** kopioi `mcpServers`-lohko tiedostosta `mcp.json`iin. **Databank AI** (sama volyymi kuin `create-mcp-agent --name "Databank AI"`): [`zt_ingest_gpu_databank_ai_mcp.json`](zt_ingest_gpu_databank_ai_mcp.json) — workspace juuri (`${workspaceFolder}/Databank/AI`). **Databank Software / Linux / Hacking:** [`zt_ingest_gpu_databank_software_mcp.json`](zt_ingest_gpu_databank_software_mcp.json), [`zt_ingest_gpu_databank_linux_mcp.json`](zt_ingest_gpu_databank_linux_mcp.json), [`zt_ingest_gpu_databank_hacking_mcp.json`](zt_ingest_gpu_databank_hacking_mcp.json) (volyymit `zt-rag-data-databank-software`, `zt-rag-data-databank-linux`, `zt-rag-data-databank-hacking`). Muille pankkeille: [`zt_ingest_gpu_cursor_mcp.json`](zt_ingest_gpu_cursor_mcp.json) (säädä mount + `zt-rag-data-<slug>`). **GPU-laitteet** ovat pakollisia (`--device /dev/kfd`, `/dev/dri`, `video`/`render`).
+3. **Cursor:** täysi neljän pankin setup (8 palvelinta) on esimerkkinä [`zt_mcp_multibank.example.json`](zt_mcp_multibank.example.json) — yhdistä `mcpServers` globaaliin `~/.cursor/mcp.json`iin tai kopioi palvelimet sieltä. Repossa [`.cursor/mcp.json`](.cursor/mcp.json) on **tyhjä** (ei tuplia globaalien kanssa). Uuteen pankkiin: kopioi yksi ingest + kysely -pari ja vaihda mount, volyymi (`zt-rag-data-databank-<slug>`) ja nimet. **GPU:** `--device /dev/kfd`, `/dev/dri`, `--group-add video`, `--group-add render` (tai `create-mcp-agent --podman-gpu amd`).
 
 4. **Työnkulku:** ingest-GPU-MCP:llä `zt_ingest` → käynnistä / käytä tavallista **zt-rag** -MCP:tä (`zt_mcp_server`) kyselyihin (CPU tai GPU, sama data).
 
 ## Cursor
 
-- Esimerkki: [`zt_cursor_mcp.json`](zt_cursor_mcp.json) → kopioi `.cursor/mcp.json`iin tai globaaliin.
-- **Projektissa:** repossa on [`.cursor/mcp.json`](.cursor/mcp.json) — useita palvelimia (esim. **Databank AI ingest GPU**, **Databank AI**). Polut ja `localhost/datapankki-mcp:*` -imaget ovat kehitysympäristökohtaisia; julkaistu image: [Image](#image) / [docs/JULKAISU_JA_INGEST_PROFIILIT.md](docs/JULKAISU_JA_INGEST_PROFIILIT.md).
+- **Globaali MCP:** pidä palvelimet **`~/.cursor/mcp.json`**:ssa, jotta sama lista toimii kaikissa workspacessa ilman tuplia. Tämän repon [`.cursor/mcp.json`](.cursor/mcp.json) on tarkoituksella **tyhjä** (`mcpServers: {}`).
+- **Monipankki (8 palvelinta):** kopioi [`zt_mcp_multibank.example.json`](zt_mcp_multibank.example.json) → globaaliin `mcp.json`iin (tai `mcpServers`-lohkot).
+- **Yksi palvelin** (koko repo → `/workspace`, `zt-rag-data`): [`zt_cursor_mcp.json`](zt_cursor_mcp.json).
+- Säädä polut, volyymit ja image (`localhost/...` tai `ghcr.io/...`); ks. [Image](#image) ja [docs/JULKAISU_JA_INGEST_PROFIILIT.md](docs/JULKAISU_JA_INGEST_PROFIILIT.md).
 - Paikallisen buildin image-nimet: **`localhost/datapankki-mcp:latest`** (CPU) ja **`localhost/datapankki-mcp:rocm`** (GPU-ingest).
 
 ## Työkalut (MCP)

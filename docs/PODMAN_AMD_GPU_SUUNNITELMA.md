@@ -146,6 +146,6 @@ Tämä on **enemmän ylläpitoa** kuin pelkkä hybridi; käytä kun haluat inges
 
 ## 8. Ingest-GPU -MCP (kontissa)
 
-Erillinen MCP (`devworkflow.zt_ingest_mcp_server`, palvelinnimi `zt-rag-ingest-gpu`) tarjoaa vain **sync / ingest / coverage / status**. Rakenna **`Dockerfile.rocm`** → `localhost/datapankki-mcp:rocm`, aja Podmanissa **GPU-laitteilla**; käytä **samaa data-volyymia** kuin kysely-MCP:ssä. Esimerkkimerkinnät: **`zt_ingest_gpu_databank_ai_mcp.json`** (Databank AI + `zt-rag-data-databank-ai`), `zt_ingest_gpu_cursor_mcp.json` (muut pankit).
+Erillinen MCP (`devworkflow.zt_ingest_mcp_server`) tarjoaa vain **sync / ingest / coverage / status**. Rakenna **`Dockerfile.rocm`** → `localhost/datapankki-mcp:rocm`, aja Podmanissa **GPU-laitteilla**; käytä **samaa data-volyymia** kuin kysely-MCP:ssä. Valmiit merkinnät: **[`zt_mcp_multibank.example.json`](../zt_mcp_multibank.example.json)** → yhdistä globaaliin `~/.cursor/mcp.json`iin.
 
 *Tämä dokumentti kuvaa **valitun** strategian: raskaat operaatiot hostilla GPU, MCP Podmanissa CPU; ingest-GPU -MCP on **vaihtoehto** kontissa-ajoon.*
