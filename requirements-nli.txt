@@ -1,0 +1,3 @@
+# Valinnainen NLI (ZT_ENABLE_NLI=1). Huom: sentence-transformers tuo usein transformersin
+# transitivisena riippuvuutena — tämä tiedosto kiinnittää vähimmäisversion erikseen.
+transformers>=4.40.0

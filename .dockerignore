@@ -1,0 +1,14 @@
+# Ei kuulu imageen; vähentää build-kontekstia
+.git
+.gitignore
+Databank
+**/*.epub
+**/*.pdf
+files.zip
+*.docx
+.cursor
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.venv
+venv

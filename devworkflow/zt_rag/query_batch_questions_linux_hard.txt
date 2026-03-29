@@ -1,0 +1,7 @@
+# Databank Linux — vaikeammat kysymykset (vim/DNS + syvä kerros; eräajossa heikompia osumia).
+# Vim-rivi: laajennettu muoto (komennot :w :wq :q :q!) parantaa osumaa O'Reilly-vim-teksteihin.
+Vi ja vim: miten tallennat tiedoston (:w, :wq), miten poistut turvallisesti (:q) ja miten hylkäät muutokset (:q!)?
+Mitä roolia DNS-resolverilla ja forwarderilla on verkkopalveluissa (esim. CoreDNS tai vastaava konteksti)?
+Miten Ansible-playbookissa idempotentti tila ilmenee käytännössä moduuleissa?
+Mitä eroa on Terraformissa suunnitelman (plan) ja soveltamisen (apply) välillä?
+Miten Git-haarojen hallintamalli (esim. trunk-based vs pitkäikäiset feature-branchit) vaikuttaa julkaisutahtiin?

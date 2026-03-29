@@ -1,0 +1,15 @@
+# Databank Hacking — 10 testikysymystä (pentest/turvallisuus).
+# Ajo: ./devworkflow/zt_rag/run_query_batch_hacking.sh
+# tai: PYTHONPATH=. ZT_RAG_IMAGE=localhost/datapankki-mcp:latest ZT_RAG_VOLUME=zt-rag-data-databank-hacking \
+#      ZT_MCP_DATABANK_HOST=<repojuuri>/Databank/Hacking python -m devworkflow.zt_rag.mcp_query_batch \
+#      --questions devworkflow/zt_rag/query_batch_questions_hacking.txt
+Mitä eroa on XSS-hyökkäyksissä stored-, reflected- ja DOM-pohjaisella variantilla?
+Miten SQL-injektio torjutaan prepared statementeilla, ja miksi pelkkä merkkijonon escapaus ei riitä aina?
+Mitä tarkoittaa privilege escalation Linux-ympäristössä ja mitä tyypillisiä lähtökohtia hyökkääjä kartoittaa?
+Mitä eroa on Metasploit-kontekstissa exploit-moduulilla ja payloadilla käytännön hyökkäysketjussa?
+Mitä tarkoittaa lateral movement Active Directory -ympäristössä?
+Miten PowerShellin käyttö penetration testauksessa eroaa tyypillisestä bash-pohjaisesta skriptauksesta?
+Mitä eroa on staattisella ja dynaamisella malware analysis -lähestymistavalla?
+Miten REST- tai GraphQL-rajapinnoissa etsitään tyypillisesti autentikointi- ja auktorisointivirheitä?
+Mitä eroa on ethical hacking -kontekstissa footprintingilla ja verkkoskannauksella?
+Mitä eroa on symmetrisellä ja asymmetrisellä salauksella, ja milloin kumpaakin käytetään tyypillisesti?

@@ -1,0 +1,7 @@
+# Databank AI — vaikeammat kysymykset (pitkät / abstraktit). Ajo: --questions … + --hard
+# Lähde: query_batch_questions.txt rivit 10–14 (encoder-decoder, luottamus, curse, putki, hallusinaatiot)
+Mitä eroa on encoder-only-, decoder-only- ja encoder-decoder -arkkitehtuurilla, ja mille tehtäville kukin sopii parhaiten?
+Jos lähdedata on luottamuksellista eikä sitä saa opettaa suoraan mallin painoihin, kannattaako RAG, fine-tuning vai molemmat eri tavoin — ja miksi?
+Mitä curse of dimensionality tarkoittaa tekstin vektoriesityksissä tai haussa, ja miten sitä käsitellään käytännössä?
+Kuvaile lyhyesti RAG-putken tyypillinen järjestys: chunkkaus, indeksointi, haku, mahdollinen reranking ja loppumalli — mitä räätälöidään usein?
+Nimeä kaksi konkreettista tapaa vähentää virheellisiä tai perusteettomia väitteitä (hallusinaatioita) kun vastaus tuotetaan haetun kontekstin päälle, ja perustele lähteistä.

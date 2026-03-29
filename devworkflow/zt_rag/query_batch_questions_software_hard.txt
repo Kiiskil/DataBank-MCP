@@ -1,0 +1,7 @@
+# Databank Software — vaikeammat kysymykset (syvä kerros; eräajossa heikompia osumia).
+# Lähde: query_batch_questions_software.txt rivit 11–15 (REST-versiointi, salaisuudet, idempotentti, Git, observability)
+Miten REST-API:n versiointi yleensä toteutetaan ja mitä riskejä URL- vs header-pohjaisella versioinnilla on?
+Miten suojataan salaisuuksia (API-avaimet, yhteysmerkkijonot) kehityksessä vs tuotannossa .NET-ekosysteemissä?
+Mitä tarkoittaa idempotentti HTTP-metodi käytännössä, ja miksi se on tärkeä suunniteltaessa turvallisia rajapintoja?
+Miten Gitin branching-malli (esim. Git Flow vs trunk-based) vaikuttaa julkaisutahtiin ja merge-konfliktien riskiin?
+Miten suunnittelisit palvelun observabilityn (lokit, metriikat, jäljitys) mikropalveluarkkitehtuurissa — mitä instrumentoidaan ensin?

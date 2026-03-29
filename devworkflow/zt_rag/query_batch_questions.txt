@@ -1,0 +1,14 @@
+# Databank AI — 10 testikysymystä (RAG/ML/embeddings).
+# Ajo: ./devworkflow/zt_rag/run_query_batch.sh
+# tai: python -m devworkflow.zt_rag.mcp_query_batch --questions devworkflow/zt_rag/query_batch_questions.txt
+# Yksi kysymys per rivi; #-alkuiset rivit ohitetaan.
+Mitä eroa on fine-tuningin ja RAG:n välillä?
+Montako kerrosta GPT-2:ssa on?
+Hallusinaatiot vain pienissä malleissa?
+Cosine similarity korkea-ulotteisissa?
+Build LLM From Scratch: tokenisaatiosta eteenpäin?
+Mitä eroa on encoder-only-, decoder-only- ja encoder-decoder -arkkitehtuurilla, ja mille tehtäville kukin sopii parhaiten?
+Jos lähdedata on luottamuksellista eikä sitä saa opettaa suoraan mallin painoihin, kannattaako RAG, fine-tuning vai molemmat eri tavoin — ja miksi?
+Mitä curse of dimensionality tarkoittaa tekstin vektoriesityksissä tai haussa, ja miten sitä käsitellään käytännössä?
+Kuvaile lyhyesti RAG-putken tyypillinen järjestys: chunkkaus, indeksointi, haku, mahdollinen reranking ja loppumalli — mitä räätälöidään usein?
+Nimeä kaksi konkreettista tapaa vähentää virheellisiä tai perusteettomia väitteitä (hallusinaatioita) kun vastaus tuotetaan haetun kontekstin päälle, ja perustele lähteistä.

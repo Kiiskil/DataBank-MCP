@@ -1,0 +1,459 @@
+# ZT-RAG suorituskykyanalyysi
+
+Analyysi kattaa koko putken: EPUB/PDF-parsinta → indeksointi → kyselyhaku → LLM-vastaus → verifiointi.
+Mittapiste: neljä tietopankkia (AI 29 EPUB, Software 24 EPUB, Linux 29 EPUB, Hacking 42 EPUB),
+suurimmat indeksit ~16 000–16 500 chunkkia. Podman-kontissa, MCP stdio -transportti.
+
+---
+
+## 1. Yleiskuva
+
+```
+EPUB/PDF → parsinta → chunkkaus → BM25 + embedding-indeksi  (ingest)
+                                           ↓ Podman-volyymi
+Kysymys → dekomponointi → hybridihaku → reranking → LLM → verifiointi  (query)
+```
+
+Kaksi erillistä kontti-imagea: `datapankki-mcp:latest` (CPU, ~1.2–1.5 GB) kyselyihin
+ja `datapankki-mcp:rocm` (ROCm, ~3.5–4.5 GB) GPU-ingestiin.
+
+---
+
+## 2. Ingest-putki
+
+### 2.1 Aikajakauma (29 EPUBia → 16k chunkkia)
+
+| Vaihe | CPU | GPU (ROCm) | Osuus (CPU) |
+|---|---|---|---|
+| SHA256-hashit (29 tiedostoa) | ~2 s | ~2 s | <1 % |
+| EPUB-parsinta + BeautifulSoup | ~15–30 s | ~15–30 s | ~4 % |
+| Chunkkaus (16k chunkkia) | ~2–3 s | ~2–3 s | <1 % |
+| Normalisointi + content_hash | ~3–5 s | ~3–5 s | ~1 % |
+| BM25 tokenize + index | ~10–15 s | ~10–15 s | ~2 % |
+| SentenceTransformer-lataus | ~5–15 s | ~10–20 s | ~2 % |
+| **Embedding encode (16k × batch 32)** | **~300–750 s** | **~10–25 s** | **~85 %** |
+| Kirjoitus (JSONL + npy + symlink) | ~5 s | ~5 s | <1 % |
+| **Yhteensä** | **~6–13 min** | **~1–2 min** | |
+
+### 2.2 Muistihuippu ingestissä
+
+| Komponentti | Arvio |
+|---|---|
+| ChunkRecord-lista (16k chunkkia, teksti mukana) | ~200 MB |
+| `corpus` (tekstikopio `build_and_publish`:ssa) | ~128 MB |
+| `prefixed` (e5 "passage: " -kopio) | ~128 MB |
+| BM25 tokens + indeksi | ~100 MB |
+| SentenceTransformer-malli (multilingual-e5-base) | ~450 MB |
+| Embeddings (numpy-matriisi 16k × 768 × float32) | ~47 MB |
+| **Yhteensä huippu** | **~1.5–2.0 GB** |
+
+Huomio: saman tekstidatan **neljä kopiota** on muistissa samanaikaisesti
+(ChunkRecord.text, corpus-lista, prefixed-lista, BM25-tokenisaatio).
+
+### 2.3 Ingest-löydökset
+
+#### P1: Embedding encode dominoi CPU:lla (~85 % ajasta)
+
+`index_publish.py` rivi 98: `model.encode(prefixed, batch_size=32)` — 16 000 chunkkia, 500 erää.
+CPU: ~0.5–1.5 s/erä. GPU pienentää ~30-kertaisesti.
+
+#### P2: Ei inkrementaalista embedding-indeksointia
+
+Kun yksikin lähde muuttuu, `build_and_publish` embedaa kaikki 16k chunkkia uudelleen.
+Parsinta on inkrementaalista (cache `ingest.py` tarkistaa chunk-hashin), mutta
+embedding + BM25 rakennetaan aina from scratch.
+
+#### P3: Sekventiaalinen parsinta
+
+`ingest.py` rivi 54: `for sid, ent in list(manifest.sources.items())` — 29 EPUBia
+parsitaan peräkkäin yhdessä prosessissa. Ei rinnakkaisuutta; GIL estää threading-hyödyn.
+
+#### P4: BeautifulSoup `html.parser`
+
+`parsers.py` rivi 38: `BeautifulSoup(raw, "html.parser")` — puhdas Python -parser on
+~3–5× hitaampi kuin `lxml`. EPUB-sisältö on tyypillisesti hyvin muotoiltua XHTML:ää.
+
+#### P5: `prefixed`-lista allokoi toisen kopion koko korpuksesta
+
+`index_publish.py` rivi 97: `prefixed = [f"passage: {t}" for t in corpus]` luo ~128 MB
+lisäkopion. SentenceTransformer >= 3.0 tukee `prompt`-parametria, joka eliminoi tämän.
+
+---
+
+## 3. Kyselyputki
+
+### 3.1 Latenssijakauma (yksi kysely, lämmin 16k-indeksi)
+
+| Vaihe | Latenssi | Osuus |
+|---|---|---|
+| Anthropic: dekomponointi (`_decompose_search_queries`) | ~1.5 s | ~22 % |
+| Anthropic: RAG-vastaus (`messages.create`) | ~3.5 s | ~50 % |
+| Retrieval (BM25 + vektori + RRF + rerank) | ~0.8 s | ~11 % |
+| `load_chunk` I/O (JSONL-lineaariskannaus) | ~0.6 s | ~9 % |
+| Verify (`load_all_chunks_map`) | ~0.3 s | ~4 % |
+| Muu (manifest, lokitus, sanitointi) | ~0.2 s | ~3 % |
+| **Yhteensä (peruspolku)** | **~7 s** | |
+
+HyDE päällä: +2–8 s. NLI päällä: +0.5–2 s. Kylmäkäynnistys (mallien lataus): +2–5 s.
+
+### 3.2 Anthropic-kutsujen määrä per kysely
+
+| Polku | Kutsuja |
+|---|---|
+| Peruspolku | 2 (decompose + RAG-vastaus) |
+| + HyDE (3 alakyselyä) | 5 (decompose + 3 × HyDE + RAG) |
+| Fallback (decompose epäonnistuu) | 3 (decompose + translate + RAG) |
+
+~72 % kokonaisajasta on Anthropic API -odotusta.
+
+### 3.3 Query-löydökset
+
+#### Q1: `load_chunk()` on O(n) lineaarinen JSONL-skannaus (KRIITTINEN)
+
+```
+retrieval.py:55–64
+    def load_chunk(self, chunk_id: str) -> dict[str, Any] | None:
+        path = self.base / "chunks.jsonl"
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                ...
+                d = json.loads(line)
+                if d.get("chunk_id") == chunk_id:
+                    return d
+        return None
+```
+
+Kutsutaan `hybrid_retrieve`:ssa jokaiselle fusioituneelle kandidaatille (rivit 143–151),
+tyypillisesti ~50 kertaa per alakysely. Multi-query-polussa 4 × 30 = 120 kutsua.
+Jokainen kutsu skannaa koko 16k-rivisen JSONL-tiedoston = **~800 000 JSON-deserialisointia
+per kysely**.
+
+Sama data ladataan uudelleen `verify_citations`:ssa (`verify.py` rivi 75):
+`chunks_map = index.load_all_chunks_map()`.
+
+#### Q2: HyDE-laajennukset ovat peräkkäisiä
+
+`cli_runner.py` rivi 362: `sub_queries = [_hyde_expand(q, model) for q in sub_queries]`
+— 3 alakyselyä × ~1–2.5 s API-kutsu = 3–7.5 s puhdasta verkkoodotusta, peräkkäin.
+Nämä ovat toisistaan riippumattomia ja rinnakkaistettavissa.
+
+#### Q3: Multi-query-haut peräkkäisiä
+
+`multi_query_retrieve` (`retrieval.py` rivi 200–215) ajaa jokaisen alakyselyn erikseen:
+BM25-tokenize + retrieve, embedding-encode, dot-product. Embedding-encode -kutsut voisivat
+käyttää yhtä batch-kutsua kaikille alakyselyille.
+
+#### Q4: Brute-force vektorihaku O(n × d)
+
+`retrieval.py` rivi 136: `sim = E @ qv` — matriisi-vektoritulo. 16k chunkilla ~5 ms,
+mutta O(n) skaalautuvuus ilman ANN-indeksiä (FAISS/HNSW).
+
+#### Q5: NLI-pipeline alustuu uudelleen joka kutsulla
+
+`verify.py` rivi 108: `nli = pipeline(...)` kutsutaan joka `maybe_nli_verify`-kutsulla
+ilman välimuistia. Pipeline-alustuks on ~0.5–1 s riippuen laitteesta.
+
+---
+
+## 4. Muistibudjetti (query-palvelin, 16k-indeksi)
+
+| Komponentti | Arvio (MB) |
+|---|---|
+| SentenceTransformer (multilingual-e5-base) | ~450 |
+| CrossEncoder (MiniLM-L6-v2) | ~90 |
+| BM25-indeksi (16k docs, `load_corpus=True`) | ~100 |
+| Embeddings (16k × 768 × float32) | ~47 |
+| PyTorch runtime | ~200 |
+| Python + riippuvuudet | ~150 |
+| **Pysyvä yhteensä** | **~1.0–1.2 GB** |
+| + verify `load_all_chunks_map` (per query, 16k chunkkia) | +130 |
+
+---
+
+## 5. Skaalautuvuusrajat
+
+| Chunkkeja | Mikä hajoaa | Syy |
+|---|---|---|
+| ~50k | Query > 5 s | `load_chunk` O(n) × 50 kandidaattia |
+| ~100k | RAM > 3 GB | embeddings 375 MB + BM25 ~750 MB + mallit |
+| ~100k | verify > 800 MB | `load_all_chunks_map` kokonaan muistiin |
+| ~250k | Brute-force > 100 ms | `E @ qv` ilman ANN:ia |
+| ~500k | CPU-ingest tunteja | Embedding encode ilman GPU:ta |
+| ~1M | RAM > 8 GB | embeddings 3 GB + BM25 ~5 GB |
+| ~1M | `meta.json` > 40 MB | Kaikki chunk_id:t yhdessä JSON-tiedostossa |
+
+---
+
+## 6. Docker-image
+
+| Image | Koko | Huomio |
+|---|---|---|
+| CPU (`Dockerfile`) | ~1.2–1.5 GB | PyTorch CPU + sentence-transformers |
+| ROCm (`Dockerfile.rocm`) | ~3.5–4.5 GB | ROCm-wheel ~2.5–3 GB |
+
+Layer-rakenne on hyvä: pip asennetaan ensin, koodi kopioidaan viimeisenä.
+`--no-cache-dir` käytössä. `transformers`-kirjasto asennetaan aina, vaikka NLI on
+valinnainen (`ZT_ENABLE_NLI=1`) — se vetää mukaan ~300–500 MB riippuvuuksia.
+
+---
+
+## 7. Korjausehdotukset
+
+### Prio 1 — Triviaalit (muutama rivi, ei riskiä)
+
+#### 1A. Chunk-map esilataus (`load_chunk` → O(1))
+
+**Ongelma:** `load_chunk` skannaa koko `chunks.jsonl` per kutsu (~800 000 JSON-parsintaa/query).
+Sama tiedosto ladataan uudelleen verifiointivaiheessa.
+
+**Korjaus:** Lataa `chunks.jsonl` kerran laiskasti dictiin `PublishedIndex`:ssä ja käytä sitä
+kaikissa lookuppeissa.
+
+```python
+# retrieval.py — PublishedIndex
+
+class PublishedIndex:
+    def __init__(self, base: Path):
+        # ... nykyinen koodi ...
+        self._chunks_map: dict[str, dict[str, Any]] | None = None
+
+    @property
+    def chunks_map(self) -> dict[str, dict[str, Any]]:
+        if self._chunks_map is None:
+            self._chunks_map = self.load_all_chunks_map()
+        return self._chunks_map
+
+    def load_chunk(self, chunk_id: str) -> dict[str, Any] | None:
+        return self.chunks_map.get(chunk_id)
+```
+
+`verify_citations` voi käyttää `index.chunks_map` eikä kutsua `load_all_chunks_map()` uudelleen.
+
+**Vaikutus:** Query-latenssi -15–25 %, muisti +130 MB (joka ladataan joka tapauksessa verify:ssä).
+
+---
+
+#### 1B. `prompt`-parametri eliminoi `prefixed`-kopion
+
+**Ongelma:** `index_publish.py` rivi 97 luo ~128 MB kopion koko korpuksesta e5-prefiksilllä.
+
+**Korjaus:** SentenceTransformer >= 3.0 (requirements: `sentence-transformers>=3.0.0`, jo täyttää) tukee
+`prompt`-parametria suoraan `encode`-kutsussa:
+
+```python
+# index_publish.py — build_and_publish
+
+embeddings = model.encode(
+    corpus,
+    prompt="passage: " if _is_e5_model(model_name) else None,
+    show_progress_bar=False,
+    normalize_embeddings=True,
+    batch_size=zt_embed_batch_size(32),
+)
+```
+
+Sama muutos `retrieval.py`:ssä query-encodingille (rivi 127–132):
+
+```python
+q_emb = index._encoder.encode(
+    [query],
+    prompt="query: " if _is_e5_model(index.model_name) else None,
+    show_progress_bar=False,
+    normalize_embeddings=True,
+)
+```
+
+**Vaikutus:** Ingest-muisti -128 MB (16k). Ei muutosta tuloksiin.
+
+---
+
+#### 1C. GPU batch_size nosto
+
+**Ongelma:** `zt_embed_batch_size` oletusarvo 32 on konservatiivinen GPU:lle.
+ROCm + 8 GB VRAM + e5-base → batch 64–128 mahtuu.
+
+**Korjaus:** Laitekohtainen oletus `torch_device.py`:ssä:
+
+```python
+def zt_embed_batch_size(default: int = 32) -> int:
+    raw = os.environ.get("ZT_EMBED_BATCH", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    if resolve_zt_torch_device() == "cuda":
+        return max(64, default)
+    return max(1, default)
+```
+
+**Vaikutus:** GPU-ingest ~2× nopeampi. Käyttäjä voi edelleen yliajaa `ZT_EMBED_BATCH`:lla.
+
+---
+
+#### 1D. Embeddings mmap-luku
+
+**Ongelma:** `np.load(embeddings.npy)` lataa koko 47 MB:n taulukon RAM:iin kerralla.
+100k chunkilla ~375 MB, 1M chunkilla ~3 GB.
+
+**Korjaus:** `retrieval.py` rivi 51:
+
+```python
+self.embeddings: np.ndarray = np.load(
+    self.base / "embeddings.npy",
+    mmap_mode="r",
+)
+```
+
+**Vaikutus:** Nopeampi startup, pienempi RSS suurilla indekseillä.
+OS sivuttaa vain käytetyt osat. Podman fuse-mount voi heikentää mmap-hyötyä;
+bind-mount on parempi vaihtoehto suurille indekseille.
+
+---
+
+### Prio 2 — Pienet (tunti työtä, matala riski)
+
+#### 2A. BeautifulSoup lxml + rinnakkainen parsinta
+
+**Ongelma:** `parsers.py` rivi 38 käyttää `html.parser`:ia (~3–5× hitaampi kuin `lxml`).
+29 EPUBia parsitaan peräkkäin samassa prosessissa.
+
+**Korjaus:**
+
+1. Vaihda parser: `BeautifulSoup(raw, "lxml")`.
+2. Lisää `lxml` riippuvuuksiin: `requirements.txt` → `lxml>=5.0.0`.
+3. Rinnakkaisuus `ingest.py`:ssä: `ProcessPoolExecutor(max_workers=4)`.
+
+**Vaikutus:** Parsinta 15–30 s → 3–8 s (~4× parannus).
+
+---
+
+#### 2B. HyDE-kutsujen rinnakkaistaminen
+
+**Ongelma:** `cli_runner.py` rivi 362: peräkkäinen `for`-silmukka 3–4 API-kutsulle.
+
+**Korjaus:**
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+if os.environ.get("ZT_ENABLE_HYDE", "").strip() == "1":
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        sub_queries = list(pool.map(lambda q: _hyde_expand(q, model), sub_queries))
+    rerank_query = " ".join(sub_queries).strip() or rerank_query
+```
+
+**Vaikutus:** HyDE-polku 3–7.5 s → ~1–2.5 s (rinnakkaiset API-kutsut).
+
+---
+
+#### 2C. Multi-query batch-encoding
+
+**Ongelma:** `multi_query_retrieve` ajaa jokaisen alakyselyn embedding-encoden erikseen.
+
+**Korjaus:** Koodaa kaikki alakyselyt yhdessä batch-kutsussa ja jaa vektorit haun jälkeen:
+
+```python
+all_q_texts = [f"query: {q}" if _is_e5 else q for q in uniq_q]
+all_q_embs = index._encoder.encode(all_q_texts, batch_size=len(all_q_texts), ...)
+# ... jaa per-query, käytä BM25 + dot-product per query
+```
+
+**Vaikutus:** 4 erillistä encode-kutsua → 1 batch-kutsu. Säästö ~100–300 ms.
+
+---
+
+#### 2D. NLI-pipeline välimuistitus
+
+**Ongelma:** `verify.py` rivi 108: `nli = pipeline(...)` alustuu joka kutsulla (~0.5–1 s).
+
+**Korjaus:** Moduulitason `@lru_cache` tai lazy singleton:
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def _nli_pipeline():
+    from transformers import pipeline
+    return pipeline("text-classification", model="cross-encoder/nli-deberta-v3-small", device=-1)
+```
+
+**Vaikutus:** NLI-polku -0.5–1 s toisesta kyselystä alkaen.
+
+---
+
+### Prio 3 — Keskisuuret (päiviä työtä, merkittävä arkkitehtuurimuutos)
+
+#### 3A. Inkrementaalinen embedding-välimuisti
+
+**Ongelma:** Yhdenkin lähteen muutos aiheuttaa kaikkien 16k chunkin uudelleenlaskennan.
+Parsinta on inkrementaalista (cache `ingest.py`), mutta `build_and_publish` aloittaa aina tyhjästä.
+
+**Ratkaisu:** Tallenna embedding per `chunk_hash` → numpy-matriisin riviin.
+Muutostilanteessa embedaa vain uudet/muuttuneet chunkit:
+
+```
+1. Lataa aiempi embedding-cache (chunk_hash → np.float32[768])
+2. Vertaa nykyisten chunkkien hasheja cacheen
+3. Embedaa vain puuttuvat/muuttuneet chunkit
+4. Kokoa matriisi: cached + uudet
+5. Tallenna päivitetty cache
+```
+
+**Vaikutus:** 1/29 lähde muuttuu → ~500 chunkkia vs 16k → ~97 % nopeampi inkrementaalinen ingest.
+
+**Riski:** Cache-invalidointi embedding-mallin vaihtuessa (tarkistettava `model_name`).
+
+---
+
+#### 3B. ANN-indeksi (FAISS / hnswlib) brute-force -tilalle
+
+**Ongelma:** `retrieval.py` rivi 136: `sim = E @ qv` on O(n × d) brute-force.
+16k chunkilla ~5 ms (ei ongelma), mutta 100k → ~30 ms, 1M → ~300 ms.
+
+**Ratkaisu:** FAISS IVF tai HNSW `build_and_publish`:ssa; `hybrid_retrieve` käyttää
+approx-nearest-neighbor -hakua.
+
+**Vaikutus:** Vektorihaku O(n) → O(log n). Tarpeen vasta > 50k chunkkia.
+
+---
+
+#### 3C. `meta.json` chunk_id:t ulos erilliseen tiedostoon
+
+**Ongelma:** `meta.json` sisältää kaikki chunk_id:t JSON-arraynä. 1M chunkilla ~40 MB,
+joka ladataan joka `PublishedIndex.__init__`:ssä.
+
+**Ratkaisu:** Tallenna chunk_id:t `chunk_ids.json`- tai `.txt`-tiedostoon erikseen;
+`meta.json` sisältää vain metatiedot (versio, malli, fingerprint).
+
+---
+
+#### 3D. `transformers` optionaaliseksi Dockerfile-kerrokseksi
+
+**Ongelma:** `transformers>=4.40.0` asennetaan aina, vaikka NLI on valinnainen.
+Se vetää mukaan ~300–500 MB riippuvuuksia → image-koko kasvaa.
+
+**Ratkaisu:** Erillinen `requirements-nli.txt` (tai multi-stage build NLI-layerilla);
+perus-imagessa ei `transformers`:ia. NLI-vaihtoehto: erillinen image tai runtime-install.
+
+---
+
+## 8. Yhteenveto
+
+| Metriikka | Nykytila (CPU) | Nykytila (GPU) | Prio 1 jälkeen (GPU) |
+|---|---|---|---|
+| Ingest (29 EPUB, 16k) | ~6–13 min | ~1–2 min | ~40–80 s |
+| Query (peruspolku, lämmin) | ~7 s | ~7 s | ~5–6 s |
+| Query (HyDE, lämmin) | ~12–17 s | ~12–17 s | ~7–9 s |
+| Ingest-muistihuippu | ~1.7 GB | ~2.8 GB | ~1.4 GB |
+| Query-muisti (pysyvä) | ~1.0–1.2 GB | ~1.0–1.2 GB | ~1.0–1.2 GB |
+| Image-koko (CPU) | ~1.2–1.5 GB | — | ~1.2–1.5 GB |
+| Image-koko (ROCm) | — | ~3.5–4.5 GB | ~3.5–4.5 GB |
+
+**Suurimmat yksittäiset parannukset:**
+1. Chunk-map esilataus (1A) — triviaalin pieni muutos, poistaa suurimman paikallisen pullonkaulan.
+2. Inkrementaalinen embedding-cache (3A) — tekee päivittäisestä ingestistä kertaluokkaa nopeamman.
+3. `prompt`-parametri (1B) + GPU batch nosto (1C) — triviaalit, välitön hyöty.
+
+**Ei-optimoitavissa:** Anthropic API -latenssi (~72 % query-ajasta) on verkkorajoitteinen;
+ainoa vaihtoehto on rinnakkaistaa riippumattomat API-kutsut (2B) tai käyttää nopeampaa mallia.

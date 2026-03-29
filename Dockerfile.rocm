@@ -1,0 +1,56 @@
+# GPU-ingest + ingest-MCP (ROCm / AMD).
+#
+# ROCm ↔ PyTorch-wheel: kontissa pyörii PyTorchin mukana tuleva ROCm-userland (ei hostin
+# /opt/rocm). Hostin AMDGPU-ajurin (esim. Nobara ROCm 7.1.x) kanssa wheel-linjan pitää olla
+# yhteensopiva; vanha rocm6.2 + RDNA3 (gfx1101) + ROCm 7.x ajuri johtaa usein
+# "HIP error: invalid device function".
+#
+# Rakennus:
+#   podman build -f Dockerfile.rocm -t localhost/datapankki-mcp:rocm .
+#
+# Vaihtoehtoiset wheel-linjat (tarkista https://pytorch.org/get-started/locally/ ):
+#   --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/rocm6.3
+#   --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/rocm6.2
+#   --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/nightly/rocm7.1
+#
+# Usean AMD-GPU:n koneella (iGPU + dGPU) suodata laite ingest-kontissa tarvittaessa:
+#   -e HIP_VISIBLE_DEVICES=0   (tai 1 — riippuu siitä, kumpi on ensin HIP-järjestyksessä)
+
+FROM python:3.12-slim-bookworm
+
+ARG GIT_REVISION=""
+ARG IMAGE_VERSION=""
+ARG SOURCE_URL=""
+ARG IMAGE_TITLE_SUFFIX="ROCm"
+
+LABEL org.opencontainers.image.title="datapankki-mcp (${IMAGE_TITLE_SUFFIX})"
+LABEL org.opencontainers.image.description="ZT-RAG ingest-MCP — PyTorch ROCm/AMD (GPU-ingest)."
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}"
+LABEL org.opencontainers.image.revision="${GIT_REVISION}"
+LABEL org.opencontainers.image.source="${SOURCE_URL}"
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Oletus: PyTorch test / ROCm 7.1 -linja — linjaa tyypilliseen Fedora 43 / Nobara + rocm-core 7.1.x -pinoon.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/test/rocm7.1
+
+COPY requirements.txt requirements-nli.txt .
+# Huom: älä välitä torch>=… pelkkänä ARG:na (shell tulkitsee > uudelleenohjaukseksi).
+RUN pip install --no-cache-dir "torch>=2.2.0" --index-url "${TORCH_INDEX_URL}" \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir -r requirements-nli.txt
+
+COPY devworkflow /app/devworkflow/
+
+ENV PYTHONPATH=/app
+ENV ZT_DATA_DIR=/data
+ENV ZT_TORCH_DEVICE=auto
+
+RUN mkdir -p /data /tmp/devworkflow
+
+ENTRYPOINT ["python", "-m", "devworkflow.zt_ingest_mcp_server"]

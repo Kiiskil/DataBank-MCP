@@ -1,0 +1,15 @@
+# Databank Software — 10 testikysymystä (5 kevyempää + 5 syvempää).
+# Ajo: ./devworkflow/zt_rag/run_query_batch_software.sh
+# tai: PYTHONPATH=. ZT_RAG_IMAGE=localhost/datapankki-mcp:latest ZT_RAG_VOLUME=zt-rag-data-databank-software \
+#      ZT_MCP_DATABANK_HOST=<repojuuri>/Databank/Software python -m devworkflow.zt_rag.mcp_query_batch \
+#      --questions devworkflow/zt_rag/query_batch_questions_software.txt
+Mitä eroa on yksikkö- ja integraatiotesteillä, ja milloin kumpaakin kannattaa painottaa?
+Mikä on dependency injection ja mitä hyötyä siitä on ASP.NET Core -sovelluksessa?
+Miten microservices-kommunikaatio eroaa monoliitin sisäisestä kutsusta — mitä trade-offeja syntyy?
+Miten C#-koodissa käsitellään nullable reference types -tyyppejä ja miksi ne otettiin käyttöön?
+Mitä eroa on synkronisella ja asynkronisella I/O:lla palvelinsovelluksessa, ja milloin async/await on perusteltua?
+Miten REST-API:n versiointi yleensä toteutetaan ja mitä riskejä URL- vs header-pohjaisella versioinnilla on?
+Miten suojataan salaisuuksia (API-avaimet, yhteysmerkkijonot) kehityksessä vs tuotannossa .NET-ekosysteemissä?
+Mitä tarkoittaa idempotentti HTTP-metodi käytännössä, ja miksi se on tärkeä suunniteltaessa turvallisia rajapintoja?
+Miten Gitin branching-malli (esim. Git Flow vs trunk-based) vaikuttaa julkaisutahtiin ja merge-konfliktien riskiin?
+Miten suunnittelisit palvelun observabilityn (lokit, metriikat, jäljitys) mikropalveluarkkitehtuurissa — mitä instrumentoidaan ensin?

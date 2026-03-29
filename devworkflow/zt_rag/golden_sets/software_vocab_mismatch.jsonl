@@ -1,0 +1,3 @@
+{"question": "Miten paketinhallinta asentaa jutut ilman että kaikki rikkoontuu?", "gold_chunk_ids": [], "notes": "Intent: dependency resolution / semver / lockfile — täytä chunkit ingestin jälkeen."}
+{"question": "Sain virheen että säikeet ei toimi yhtä aikaa — miten synkataan?", "gold_chunk_ids": [], "notes": "Intent: mutex / concurrency / async; wrong everyday wording."}
+{"question": "Versionhallinta: miten perun muutokset takaisin ilman että historia katoaa?", "gold_chunk_ids": [], "notes": "Intent: git revert / reset terminology (colloquial Finnish)."}

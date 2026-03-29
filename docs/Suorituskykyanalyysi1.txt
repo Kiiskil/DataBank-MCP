@@ -1,0 +1,272 @@
+# Suorituskykyanalyysi
+
+## Tavoite
+
+Tämä dokumentti kokoaa projektin keskeiset suorituskykylöydökset yhteen paikkaan. Fokus on kolmessa osa-alueessa:
+
+- `zt_query`-polku ja sen latenssi
+- ingest- ja publish-putken kustannukset
+- Podman- ja MCP-työnkulun aiheuttama overhead
+
+Analyysi perustuu koodin lukemiseen sekä kevyeen nykytilan tarkistukseen Linux- ja Hacking-pankkien volyymeista. Tämä ei ole täysi benchmark-raportti, vaan arkkitehtuuri- ja implementaatiotason analyysi.
+
+---
+
+## Tiivistelmä
+
+Projektin suurimmat suorituskykyriskit ovat tällä hetkellä seuraavat:
+
+1. `zt_query` avaa indeksin käytännössä kahdesti per kysely.
+2. Chunkien haku perustuu lineaariseen `chunks.jsonl`-skannaukseen.
+3. Sitaattiverifiointi lukee koko `chunks.jsonl`-tiedoston uudelleen jokaisella vastauksella.
+4. Ingest tekee aina täyden publish-vaiheen, vaikka lähdeaineisto ei olisi muuttunut.
+5. Kyselyä kohden voi tulla useita LLM-kutsuja ennen varsinaista vastausta.
+6. Shell-pohjaiset batch-ajot käynnistävät uuden Podman-kontin jokaiselle kysymykselle.
+
+Käytännössä nopeimmat korkean vaikutuksen parannukset ovat:
+
+- poista kaksois-`open_index` kyselypolusta
+- vaihda chunk-haku lineaarisesta skannauksesta indeksoituun tai välimuistitettuun hakuun
+- ohita `build_and_publish`, jos `source_fingerprint` ei ole muuttunut
+- suosi `mcp_query_batch`-ajoa shell-skriptien sijaan
+
+---
+
+## Nykyinen datakoko
+
+Kevyt tarkistus nykyisistä julkaistuista indekseistä:
+
+| Pankki | Chunkit | `chunks.jsonl` | `embeddings.npy` |
+|--------|---------|----------------|------------------|
+| Linux | noin 16 236 | noin 35 MB | noin 48 MB |
+| Hacking | noin 16 560 | noin 36 MB | noin 49 MB |
+
+Jo tällä koolla lineaariset `chunks.jsonl`-skannaukset ja toistuvat täyden indeksin lataukset tuntuvat käytännössä.
+
+---
+
+## 1. Kyselypolku
+
+### 1.1 Indeksi avataan kahdesti per kysely
+
+`devworkflow/zt_rag/cli_runner.py` avaa indeksin heti `run_query()`-alussa. Tämän jälkeen `load_context_blocks()` avaa saman indeksin uudelleen `devworkflow/zt_rag/retrieval.py`:ssä.
+
+Vaikutus:
+
+- ylimääräinen levy-I/O
+- turha `meta.json`-, BM25- ja `embeddings.npy`-lataus
+- suurempi muistijalanjälki kyselyä kohden
+
+Vaikutusarvio: korkea.
+
+### 1.2 Chunk-haku on lineaarinen
+
+`PublishedIndex.load_chunk()` lukee `chunks.jsonl`-tiedoston alusta loppuun, kunnes oikea `chunk_id` löytyy. Tätä käytetään retrievaalissa useita kertoja saman kyselyn aikana.
+
+Vaikutus:
+
+- suorituskyky skaalautuu huonosti chunkien määrän mukana
+- samalla kyselyllä tehdään paljon pientä mutta kallista JSONL-I/O:ta
+
+Vaikutusarvio: korkea.
+
+### 1.3 Sitaattiverifiointi lukee koko chunk-aineiston uudelleen
+
+`verify_citations()` kutsuu `load_all_chunks_map()`-metodia, joka lukee koko `chunks.jsonl`-tiedoston muistiin jokaisella vastauksella.
+
+Vaikutus:
+
+- turha täysi tiedoston läpikäynti jokaisella `zt_query`-ajolla
+- tarpeettoman suuri muistihuippu
+
+Vaikutusarvio: keski-korkea.
+
+### 1.4 Vektorihaku käy koko embedding-matriisin läpi
+
+`hybrid_retrieve()` laskee vektoriosuuden muodossa `E @ qv`, eli koko embedding-matriisi pisteytetään joka alakyselyllä.
+
+Vaikutus:
+
+- lineaarinen kustannus chunkien määrän mukana
+- toimii vielä nykyisessä mittakaavassa, mutta ei skaalaudu pitkälle ilman ANN-ratkaisua
+
+Vaikutusarvio: keski.
+
+### 1.5 LLM-esivaihe kasvattaa latenssia
+
+`cli_runner.py` voi tehdä ennen varsinaista vastausta seuraavat vaiheet:
+
+- `_decompose_search_queries()`
+- `_translate_query_for_retrieval()`
+- valinnainen `_hyde_expand()`
+
+Tämän jälkeen tehdään vielä varsinainen vastaus-LLM-kutsu.
+
+Vaikutus:
+
+- lisää verkko- ja mallilatenssia
+- nostaa API-kustannusta
+- vaikuttaa erityisesti lyhyisiin, yksinkertaisiin kysymyksiin
+
+Vaikutusarvio: keski-korkea.
+
+### 1.6 Cross-encoder ja valinnainen NLI ovat raskaita
+
+Cross-encoder-rerankkaus on laadullisesti hyödyllinen, mutta kallis. Lisäksi `maybe_nli_verify()` luo `transformers.pipeline()`-instanssin funktion sisällä, jos NLI on käytössä.
+
+Vaikutus:
+
+- rerank lisää selvästi laskentaa erityisesti CPU:lla
+- NLI voi lisätä huomattavan lisälatenssin, jos se kytketään päälle
+
+Vaikutusarvio: keski.
+
+---
+
+## 2. Ingest ja publish
+
+### 2.1 Publish rakennetaan aina kokonaan uudelleen
+
+`run_ingest()` kutsuu `build_and_publish()`-funktiota aina, kun chunkkeja on saatavilla. Koodissa ei ole nopeaa "ei muutoksia, ei rebuildia" -haaraa ennen publish-vaihetta.
+
+Vaikutus:
+
+- BM25-indeksi rakennetaan aina uudelleen
+- koko korpus embedataan uudelleen
+- kaikki julkaisutiedostot kirjoitetaan uudelleen
+
+Vaikutusarvio: erittäin korkea.
+
+### 2.2 Embedding-vaihe toimii koko korpukselle yhdellä publish-ajolla
+
+`index_publish.py` rakentaa `corpus`-listan kaikista chunkeista ja ajaa `SentenceTransformer.encode()`-vaiheen koko aineistolle.
+
+Vaikutus:
+
+- suorituskyky skaalautuu lineaarisesti koko korpuksen mukana
+- inkrementaalista "vain muuttuneet chunkit" -polkua ei ole
+
+Vaikutusarvio: korkea.
+
+### 2.3 Parsinta voi olla raskas, mutta cache auttaa
+
+EPUB- ja PDF-parsinta on odotetusti CPU-painotteista:
+
+- EPUB: `BeautifulSoup` dokumentti-itemeille
+- PDF: `fitz` + sivukohtainen `get_text()`
+
+Tämä ei ole suurin ongelma silloin, kun cache osuu, mutta ilman cachea ingest maksaa selvästi.
+
+Vaikutusarvio: keski.
+
+### 2.4 Välimuistin luku ei ole muistitehokkain mahdollinen
+
+Cachea luettaessa JSONL luetaan ensin kokonaisena tekstinä ja pilkotaan vasta sen jälkeen riveiksi.
+
+Vaikutus:
+
+- väliaikainen muistihuippu kasvaa turhaan
+- erityisesti suuret lähteet hyötyisivät streamaavasta luvusta
+
+Vaikutusarvio: matala-keski.
+
+### 2.5 Lähdetiedoston hash voidaan laskea useammin kuin olisi pakko
+
+`sync`- ja ingest-vaiheissa päädytään lukemaan samoja tiedostoja hash-laskentaa varten useammassa vaiheessa.
+
+Vaikutusarvio: matala-keski.
+
+---
+
+## 3. Podman- ja MCP-overhead
+
+### 3.1 Shell-batchit ovat hitaita tarkoituksella
+
+`run_query_batch_linux.sh`, `run_query_batch_hacking.sh` ja vastaavat shell-skriptit tekevät uuden `podman run --rm` -ajon jokaiselle kysymykselle.
+
+Vaikutus:
+
+- korkea kylmäkäynnistyslatenssi
+- toistuva Pythonin, riippuvuuksien ja MCP/CLI-polun alustaminen
+
+Vaikutusarvio: erittäin korkea batch-ajossa.
+
+### 3.2 `mcp_query_batch.py` on oikea lämmin polku
+
+`devworkflow/zt_rag/mcp_query_batch.py` pitää yhden Podman-prosessin ja yhden MCP-session auki koko kysymyssarjan ajan.
+
+Vaikutus:
+
+- huomattavasti pienempi kokonaislatenssi usean kysymyksen sarjoissa
+- parempi tapa testata tietopankkien laatua ja suorituskykyä
+
+### 3.3 Useat MCP-palvelimet lisäävät rinnakkaista overheadia
+
+Jos Cursorissa on samanaikaisesti paljon eri pankkien MCP-palvelimia käytössä, jokainen niistä voi tuoda oman Podman- ja Python-käynnistyksen sekä mallien alustuksen.
+
+Vaikutusarvio: keski.
+
+### 3.4 Image-tagien ja työnkulkujen eriytyminen lisää operatiivista kitkaa
+
+Projektissa käytetään eri konteksteissa sekä `localhost/zt-rag-mcp:latest`- että `localhost/datapankki-mcp:*`-imageja. Tämä ei ole puhdas runtime-pullonkaula, mutta se vaikeuttaa suorituskyvyn havainnointia, koska eri workflowt voivat ajaa eri imagea.
+
+Vaikutusarvio: matala-keski.
+
+---
+
+## Suositeltu toteutusjärjestys
+
+### Vaihe 1: nopeimmat korkean vaikutuksen korjaukset
+
+1. Poista kaksois-`open_index` kyselypolusta.
+2. Tee `chunk_id`-haku ilman lineaarista `chunks.jsonl`-skannausta.
+3. Muuta sitaattiverifiointi käyttämään olemassa olevaa kontekstia tai kevyttä indeksirakennetta koko tiedoston uudelleenluvun sijaan.
+4. Suosi dokumentaatiossa ja arjen käytössä `mcp_query_batch`-ajoa shell-skriptien sijaan.
+
+### Vaihe 2: ingestin suurin säästö
+
+1. Lisää nopea tarkistus: jos `source_fingerprint` ei ole muuttunut eikä `force_rebuild` ole käytössä, ohita `build_and_publish()`.
+2. Tämän jälkeen arvioi, onko inkrementaalinen publish tarpeen.
+
+### Vaihe 3: pidemmän aikavälin skaalautuvuus
+
+1. Arvioi ANN-pohjainen vektorihaku, jos chunkimäärä kasvaa merkittävästi.
+2. Tee LLM-esivaiheesta valinnainen tai heuristiikkapohjainen kevyille kysymyksille.
+3. Arvioi NLI-polun mallin alustuksen välimuistitus, jos NLI otetaan käyttöön.
+
+---
+
+## Käytännön mittaussuunnitelma
+
+Jos analyysi halutaan seuraavaksi muuttaa koviksi suorituskykyluvuiksi, kannattaa mitata vähintään nämä:
+
+1. Ensimmäisen kyselyn latenssi kylmästä alusta.
+2. Toisen ja kolmannen kyselyn latenssi samassa MCP-istunnossa.
+3. Yhden kyselyn kokonaisaika ilman query-decompositionia.
+4. Yhden kyselyn kokonaisaika ilman rerankkausta.
+5. Ingestin kokonaisaika tilanteessa, jossa mikään lähde ei ole muuttunut.
+
+Tämä erottaa toisistaan:
+
+- Podman- ja Python-käynnistyksen
+- indeksin latauksen
+- retrievaalin
+- LLM-esivaiheen
+- lopullisen vastaus-LLM-kutsun
+
+---
+
+## Yhteenveto
+
+Projektin arkkitehtuuri on toimiva, mutta nykyisessä toteutuksessa samaa dataa luetaan ja alustetaan useassa kohdassa uudelleen. Pahin käytännön vaikutus näkyy kyselypolussa ja ingestissä:
+
+- kyselypolku tekee turhaa I/O:ta
+- ingest rebuildaa liikaa
+- shell-batchit kärsivät kylmäkäynnistyksestä
+
+Jos vain kaksi asiaa tehdään ensin, niiden pitäisi olla:
+
+1. yksi `open_index` per `run_query`
+2. lineaarisen `chunks.jsonl`-haun poistaminen
+
+Nämä kaksi muuttavat sekä yksittäisen kyselyn latenssia että koko järjestelmän skaalautuvuutta eniten suhteessa työmäärään.

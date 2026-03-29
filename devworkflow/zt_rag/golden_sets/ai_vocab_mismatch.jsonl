@@ -1,0 +1,3 @@
+{"question": "Miten tekoälystä tehdään fiksummin ilman että malli muistaa kaiken ulkoa?", "gold_chunk_ids": [], "notes": "Intent: fine-tuning / RAG / param efficient; replace gold_chunk_ids after indexing."}
+{"question": "Nuo embedding-vektorijutut paperilla — miten niitä verrataan perinteiseen hakuun?", "gold_chunk_ids": [], "notes": "Intent: dense retrieval vs BM25 / hybrid search vocabulary."}
+{"question": "ChatGPT-tyylinen malli valehtelee faktoista — mikä termi kuvaa sitä miten estetään?", "gold_chunk_ids": [], "notes": "Intent: hallucination / grounding / RAG citations."}

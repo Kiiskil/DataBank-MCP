@@ -1,0 +1,7 @@
+# Databank Hacking — vaikeammat kysymykset (syvä kerros: analyysi, rajapinnat, kryptografia).
+# Lähde: query_batch_questions_hacking.txt rivit 11–15
+Miten PowerShellin käyttö penetration testauksessa eroaa tyypillisestä bash-pohjaisesta skriptauksesta?
+Mitä eroa on staattisella ja dynaamisella malware analysis -lähestymistavalla?
+Miten REST- tai GraphQL-rajapinnoissa etsitään tyypillisesti autentikointi- ja auktorisointivirheitä?
+Mitä eroa on ethical hacking -kontekstissa footprintingilla ja verkkoskannauksella?
+Mitä eroa on symmetrisellä ja asymmetrisellä salauksella, ja milloin kumpaakin käytetään tyypillisesti?

@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+.pytest_cache/
+.git/
+# Tietopankki paikallisesti (EPUB/PDF); ei versionhallintaan
+Databank/
+**/*.epub
+**/*.pdf
+# Viimeisin kysely-erän tekstivienti (generoitu paikallisesti)
+devworkflow/zt_rag/last_query_batch_export.txt
