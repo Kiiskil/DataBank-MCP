@@ -19,10 +19,22 @@ def sanitize_retrieved_text(text: str, max_len: int = 120_000) -> str:
     return t
 
 
-def wrap_source_block(chunk_id: str, title: str, body: str) -> str:
+def wrap_source_block(
+    chunk_id: str,
+    title: str,
+    body: str,
+    *,
+    section: str = "",
+    lang: str = "",
+) -> str:
     """Eristä lähde selkeisiin rajamerkkeihin."""
+    meta = f"chunk_id={chunk_id} title={title!r}"
+    if section:
+        meta += f" section={section!r}"
+    if lang:
+        meta += f" lang={lang!r}"
     return (
-        f"---BEGIN_SOURCE chunk_id={chunk_id} title={title!r}---\n"
+        f"---BEGIN_SOURCE {meta}---\n"
         f"{body}\n"
         f"---END_SOURCE chunk_id={chunk_id}---"
     )

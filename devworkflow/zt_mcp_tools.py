@@ -110,7 +110,7 @@ def list_tools(*, include_query: bool) -> list[types.Tool]:
                     "Jos vastaus heikko tai 'ei löydy lähteistä', muotoile kysymys uudelleen konkreettisemmiksi "
                     "(työkalu- ja protokollanimet kuten kirjassa). Korpuksen nimistä: zt_status / zt_list_ingestible; "
                     "tiedoston sisältöön workspace-datapankissa Databank/… Read-työkalulla. "
-                    "Ylläpito: HyDE, top_k — docs/MCP_AGENT_OHJE.md ja PERF_ENV.md."
+                    "Ylläpito: docs/ZT_QUERY_BEST_PRACTICES.md, MCP_AGENT_OHJE.md, PERF_ENV.md."
                 ),
                 inputSchema={
                     "type": "object",

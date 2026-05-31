@@ -1,0 +1,8 @@
+# zt-retrieve standalone / PyInstaller (ei MCP, ingest, EPUB/PDF)
+numpy>=1.26.0
+scipy>=1.11.0
+bm25s>=0.2.0
+faiss-cpu>=1.8.0
+pydantic>=2.0.0
+sentence-transformers>=3.0.0
+# torch: asenna CPU-wheel erikseen (ks. scripts/build_zt_retrieve.sh)

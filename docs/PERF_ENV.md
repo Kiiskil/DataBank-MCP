@@ -47,15 +47,18 @@ Telemetria: `retrieval_attempt_count`, `retrieval_chosen_attempt` (`primary` / `
 
 Golden-setit ja A/B: [devworkflow/zt_rag/golden_sets/README.md](../devworkflow/zt_rag/golden_sets/README.md), `./devworkflow/zt_rag/run_vocab_ab_compare.sh`.
 
-Agentit eivät yleensä näe mitä kirjoja pankissa on; kysymyksen muotoilu vs. hakuprofiili: [MCP_AGENT_OHJE.md](MCP_AGENT_OHJE.md).
+Agentit eivät yleensä näe mitä kirjoja pankissa on; hakutarkkuus: [ZT_QUERY_BEST_PRACTICES.md](ZT_QUERY_BEST_PRACTICES.md), [MCP_AGENT_OHJE.md](MCP_AGENT_OHJE.md).
 
 ## Ingest
+
+EPUB-parseri (spine, nav, otsikkopolku, markdown): [INGEST_EPUB.md](INGEST_EPUB.md).
 
 | Muuttuja | Kuvaus |
 |----------|--------|
 | `ZT_INGEST_PARSE_WORKERS` | Rinnakkaisten parse-prosessien määrä (oletus `min(4, lähteitä)`); `1` = sekventiaalinen |
 | `ZT_DISABLE_EMBED_CACHE` | `1` → ei inkrementaalista embedding-välimuistia |
 | `ZT_INGEST_REQUIRE_CUDA` | `1` → ingest vaatii GPU:n |
+| `ZT_EPUB_INCLUDE_NONLINEAR` | `1` → EPUB spine `linear="no"` -sivut mukaan ingestissä |
 
 ## Eval
 

@@ -15,13 +15,14 @@ def parse_source_file(path_str: str, ft: str) -> dict[str, Any]:
     try:
         p = Path(path_str)
         if ft == "epub":
-            doc = parse_epub(p)
+            doc, quality = parse_epub(p)
             return {
                 "ok": True,
                 "error": None,
                 "title": doc.title,
+                "lang": doc.lang,
                 "sections": doc.sections,
-                "quality": {},
+                "quality": quality,
             }
         if ft == "md":
             doc = parse_markdown(p)

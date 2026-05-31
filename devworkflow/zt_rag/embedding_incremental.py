@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from devworkflow.zt_rag.ingest import ChunkRecord
+from devworkflow.zt_rag.chunk_record import ChunkRecord
 
 
 def load_reusable_vectors_from_published_index(

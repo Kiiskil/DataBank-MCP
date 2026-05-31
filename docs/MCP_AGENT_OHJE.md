@@ -48,6 +48,8 @@ Ingest-GPU -MCP:ssä **`zt_query` ei ole käytössä**; kyselyt varsinaisen kyse
 
 ## 5. Liittyvät dokumentit
 
+- [ZT_QUERY_BEST_PRACTICES.md](ZT_QUERY_BEST_PRACTICES.md) — parhaat hakukäytännöt (tarkkuus, putki, troubleshooting)  
+- [INGEST_EPUB.md](INGEST_EPUB.md) — EPUB-ingest ja re-indeksointi  
 - [MULTI_DATABANK_TOTEUTUS.md](MULTI_DATABANK_TOTEUTUS.md) — useita pankkeja / volyymeja  
 - [PERF_ENV.md](PERF_ENV.md) — kysely- ja hakusäätö  
 - [PODMAN_REBUILD.md](PODMAN_REBUILD.md) — imaget ja volyymit  

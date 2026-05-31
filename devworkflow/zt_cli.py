@@ -69,6 +69,73 @@ def main() -> None:
     qp.add_argument("question", help="Kysymys")
     qp.add_argument("--model", default=None, help="Malli (oletus ZT_QUERY_MODEL tai claude-sonnet-4-6)")
 
+    rp = sub.add_parser(
+        "retrieve",
+        help="Retrieve-only haku (ei LLM:ää; JSON stdout cli-botille)",
+    )
+    rp.add_argument(
+        "-q",
+        "--question",
+        required=True,
+        help="Hakumerkkijono",
+    )
+    rp.add_argument(
+        "-n",
+        "--top-n",
+        type=int,
+        default=5,
+        help="Palautettavien chunkkien määrä (oletus 5)",
+    )
+    rp.add_argument(
+        "--json",
+        action="store_true",
+        help="JSON stdout (suositus cli-botille)",
+    )
+
+    xp = sub.add_parser(
+        "export-linux",
+        help="Pakkaa julkaistu indeksi cli-bot-databank .tar.zst -bundleksi",
+    )
+    xp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="ZT_DATA_DIR (oletus: ZT_DATA_DIR-ympäristö tai /data)",
+    )
+    xp.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Kohdetiedosto (esim. ./artifacts/linux-databank-dev.tar.zst)",
+    )
+    xp.add_argument(
+        "--version",
+        required=True,
+        help="Paketin versio (manifest.json, esim. 0.1.0-dev)",
+    )
+    xp.add_argument(
+        "--databank-id",
+        default="linux",
+        help="databank_id manifestissa (oletus linux)",
+    )
+
+    vp = sub.add_parser(
+        "verify-databank-package",
+        help="Varmista purketun cli-bot-paketin manifest vs indexes/",
+    )
+    vp.add_argument(
+        "--data-dir",
+        type=Path,
+        required=True,
+        help="Purkettu ZT_DATA_DIR (esim. ~/.local/share/cli-bot/modules/linux)",
+    )
+    vp.add_argument(
+        "--package-manifest",
+        type=Path,
+        default=None,
+        help="Valinnainen export-sidecar (*.package.json)",
+    )
+
     cap = sub.add_parser(
         "create-mcp-agent",
         help=(
@@ -250,6 +317,12 @@ def main() -> None:
         run_sync_sources,
         run_verify_coverage,
     )
+    from devworkflow.zt_rag.retrieve_runner import run_retrieve
+    from devworkflow.zt_rag.export_linux_index import (
+        export_linux_index,
+        verify_installed_package,
+    )
+    from devworkflow.zt_rag.storage_layout import StoragePaths
 
     paths = _paths()
 
@@ -265,6 +338,54 @@ def main() -> None:
         if not os.environ.get("ZT_QUERY_LOG_SOURCE", "").strip():
             os.environ["ZT_QUERY_LOG_SOURCE"] = "zt_cli"
         out = run_query(paths, args.question, model=args.model)
+    elif args.cmd == "verify-databank-package":
+        out = verify_installed_package(
+            args.data_dir.resolve(),
+            package_manifest_path=args.package_manifest,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        if not out.get("ok"):
+            sys.exit(1)
+        return
+    elif args.cmd == "export-linux":
+        root = args.data_dir
+        if root is None:
+            root = Path(os.environ.get("ZT_DATA_DIR", "/data"))
+        exp_paths = StoragePaths.create(root=root.resolve())
+        out = export_linux_index(
+            exp_paths,
+            args.output,
+            version=args.version,
+            databank_id=args.databank_id,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        if not out.get("ok"):
+            sys.exit(1)
+        return
+    elif args.cmd == "retrieve":
+        os.environ.setdefault("ZT_QUERY_POLICY", "fast")
+        out = run_retrieve(paths, args.question, top_n=max(1, args.top_n))
+        if args.json:
+            print(json.dumps(out, ensure_ascii=False))
+        else:
+            if out.get("ok"):
+                for i, ch in enumerate(out.get("chunks") or [], 1):
+                    title = ch.get("title", "")
+                    section = ch.get("section", "")
+                    score = ch.get("score", "")
+                    print(f"--- {i} {title!r} {section!r} score={score} ---")
+                    print(ch.get("text", "")[:2000])
+            else:
+                print(
+                    f"error: {out.get('error')}: {out.get('message')}",
+                    file=sys.stderr,
+                )
+        if not out.get("ok"):
+            err = out.get("error", "")
+            if err == "empty_question":
+                sys.exit(2)
+            sys.exit(1)
+        return
     else:
         p.error("tuntematon komento")
 

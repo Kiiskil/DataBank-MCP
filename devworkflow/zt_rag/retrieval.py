@@ -11,7 +11,7 @@ import bm25s
 import numpy as np
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
-from devworkflow.zt_rag.index_publish import load_published_chunk_ids, published_index_dir
+from devworkflow.zt_rag.index_meta import load_published_chunk_ids, published_index_dir
 from devworkflow.zt_rag.vector_ann import ann_knn_doc_indices, load_ann_index
 from devworkflow.zt_rag.storage_layout import StoragePaths
 from devworkflow.zt_rag.torch_device import resolve_zt_torch_device, zt_embed_batch_size
@@ -128,6 +128,8 @@ def _rerank(
     query: str,
     candidates: list[dict[str, Any]],
     top_n: int,
+    *,
+    attach_scores: bool = False,
 ) -> list[dict[str, Any]]:
     """Cross-encoder reranking: pisteytä query+passage -parit ja palauta top_n."""
     if not candidates:
@@ -136,7 +138,15 @@ def _rerank(
     pairs = [(query, str(c.get("text", ""))) for c in candidates]
     scores = reranker.predict(pairs, show_progress_bar=False)
     scored = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
-    return [c for _, c in scored[:top_n]]
+    out: list[dict[str, Any]] = []
+    for sc, cand in scored[:top_n]:
+        if attach_scores:
+            row = dict(cand)
+            row["score"] = float(sc)
+            out.append(row)
+        else:
+            out.append(cand)
+    return out
 
 
 def hybrid_retrieve(
@@ -149,6 +159,7 @@ def hybrid_retrieve(
     *,
     rerank_telemetry: list[dict[str, Any]] | None = None,
     telemetry_stage: str = "hybrid_retrieve",
+    attach_rerank_scores: bool = False,
 ) -> list[dict[str, Any]]:
     ov = os.environ.get("ZT_TOP_K_FUSION", "").strip()
     if ov:
@@ -203,7 +214,12 @@ def hybrid_retrieve(
     if rerank_telemetry is not None and rerank:
         rerank_telemetry.append({"stage": telemetry_stage, **decision})
     if use_rerank and candidates:
-        return _rerank(query, candidates, top_n)
+        return _rerank(
+            query,
+            candidates,
+            top_n,
+            attach_scores=attach_rerank_scores,
+        )
     return candidates[:top_n]
 
 
@@ -274,6 +290,7 @@ def multi_query_retrieve(
     rerank_query: str,
     top_n: int = 10,
     rerank_telemetry: list[dict[str, Any]] | None = None,
+    attach_rerank_scores: bool = False,
 ) -> list[dict[str, Any]]:
     """Hae usealla alakyselyllä: hybrid per kysely ilman rerankia, RRF yhdistää, yksi rerank."""
     uniq_q: list[str] = []
@@ -300,6 +317,7 @@ def multi_query_retrieve(
             rerank=True,
             rerank_telemetry=rerank_telemetry,
             telemetry_stage="single_query",
+            attach_rerank_scores=attach_rerank_scores,
         )
 
     q_matrix = _encode_queries_for_retrieval(index, uniq_q)
@@ -347,7 +365,12 @@ def multi_query_retrieve(
     if rerank_telemetry is not None:
         rerank_telemetry.append({"stage": "multi_query_final", **decision})
     if use_rerank:
-        return _rerank(rerank_query, candidates, top_n)
+        return _rerank(
+            rerank_query,
+            candidates,
+            top_n,
+            attach_scores=attach_rerank_scores,
+        )
     return candidates[:top_n]
 
 
@@ -374,6 +397,7 @@ def load_context_blocks(
     top_n: int = 10,
     index: PublishedIndex | None = None,
     retrieval_telemetry: dict[str, Any] | None = None,
+    attach_rerank_scores: bool = False,
 ) -> tuple[list[dict[str, Any]], PublishedIndex | None]:
     idx = index if index is not None else open_index(paths)
     if idx is None:
@@ -385,6 +409,7 @@ def load_context_blocks(
         rerank_query=rerank_query,
         top_n=top_n,
         rerank_telemetry=rerank_events,
+        attach_rerank_scores=attach_rerank_scores,
     )
     if retrieval_telemetry is not None:
         retrieval_telemetry["rerank_events"] = rerank_events

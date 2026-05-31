@@ -1,0 +1,17 @@
+# Retrieve-smoke: yksi kysymys per rivi (kommentti # ja tyhjät ohitetaan).
+# Manuaali / ZT_RUN_SMOKE_RETRIEVE=1: vaatii julkaistun indeksin ZT_DATA_DIR:ssä.
+dnf install package name Fedora
+systemctl enable sshd
+firewall-cmd permanent zone
+journalctl follow unit
+rpm query installed packages
+kernel module loading
+GRUB bootloader configuration
+networkmanager connection show
+useradd create home directory
+chmod recursive permissions
+find files by name
+grep log files
+tar extract archive
+sshd_config PermitRootLogin
+dnf repository enable

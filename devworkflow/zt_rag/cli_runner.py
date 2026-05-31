@@ -33,6 +33,7 @@ from devworkflow.zt_rag.query_rewrite import (
     should_trigger_query_fallback,
     skip_query_decompose,
 )
+from devworkflow.zt_rag.index_guard import check_manifest_fingerprint
 from devworkflow.zt_rag.retrieval import load_context_blocks, open_index
 from devworkflow.zt_rag.term_catalog import (
     load_term_catalog,
@@ -195,6 +196,8 @@ def _build_context_with_budget(
             str(row.get("chunk_id", "")),
             str(row.get("title", "")),
             body,
+            section=str(row.get("section", "") or row.get("heading_path", "")),
+            lang=str(row.get("lang", "")),
         )
         remaining = total_cap - current_chars
         if remaining <= 0:
@@ -465,24 +468,16 @@ def run_query(
     if idx is None or not meta:
         return refusal_payload()
 
-    man = Manifest.load(mf)
-    active_hashes = {
-        e.source_id: e.source_hash
-        for e in man.sources.values()
-        if e.status in (SourceStatus.ACTIVE, SourceStatus.UPDATED)
-        and e.source_hash
-    }
-    local_fp = fingerprint_source_hashes(active_hashes)
-    pub_fp = str(meta.get("source_fingerprint", ""))
-    if pub_fp and local_fp and pub_fp != local_fp:
+    fp = check_manifest_fingerprint(paths)
+    if not fp.ok:
         _log_query(
             paths,
             {
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "question": question,
                 "result": "fingerprint_drift",
-                "published": pub_fp,
-                "manifest": local_fp,
+                "published": fp.published,
+                "manifest": fp.manifest,
                 "answer_provenance": "none (ei hakua — indeksi vs manifesti ei täsmää)",
             },
         )

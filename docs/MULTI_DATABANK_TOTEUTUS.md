@@ -130,6 +130,33 @@ Työkalurekisterissä jokaiselle pankille oma rivi; **`cursor_mcp_key`** = sama 
 
 ---
 
+## EPUB-ingest päivityksen jälkeen (kaikki pankit)
+
+Kun repossa on uusi EPUB-parseri ([INGEST_EPUB.md](INGEST_EPUB.md)), **jokainen volyymi** tarvitsee täyden re-ingestin (chunk-teksti ja hashit muuttuvat):
+
+1. Päivitä image (`podman build` / `pull`).
+2. Per pankki: `zt_sync_sources` (tai CLI `sync`) → **`zt_ingest` `force_rebuild: true`** (tai CLI `ingest --force`).
+3. `zt_verify_coverage` — manifest ja julkaistu indeksi linjassa.
+4. Valinnainen regressio: `mcp_query_batch --hard` tai pankin kysymyslista; golden-set `gold_chunk_ids` uudelleen ingestin jälkeen.
+
+Kyselyt: [ZT_QUERY_BEST_PRACTICES.md](ZT_QUERY_BEST_PRACTICES.md).
+
+## cli-bot: export Linux-databank
+
+Kun julkaistu indeksi on valmis (esim. Linux-volyymi):
+
+```bash
+export ZT_DATA_DIR=/polku/zt-rag-data-linux   # sama kuin MCP-volyymi
+python -m devworkflow.zt_cli export-linux \
+  --output ./artifacts/linux-databank-dev.tar.zst \
+  --version 0.1.0-dev \
+  --databank-id linux
+```
+
+Paketti sisältää vain `indexes/current/` (meta, chunks, bm25, embeddings, …) ja `manifest.json` — **ei** `sources/`-EPUB:eja. Käyttö cli-botissa: pura → `ZT_DATA_DIR` → `zt_cli retrieve --json` ([ZT-RETRIEVE-JSON.md](ZT-RETRIEVE-JSON.md)).
+
+Dev: pieni EPUB-subset riittää; tuotanto: päätös subset vs. koko korpus ennen release-tagia.
+
 ## Tarkistuslista
 
 1. Image ajan tasalla: `podman build -t localhost/datapankki-mcp:latest .`

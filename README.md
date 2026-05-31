@@ -10,7 +10,7 @@ Sisarrepo: **Coder-MCP-server** (`../Coder-MCP-server`) — DevWorkflow + Arch M
 
 **Useita MCP-agentteja + AI-indeksin päivitys:** [docs/MULTI_DATABANK_TOTEUTUS.md](docs/MULTI_DATABANK_TOTEUTUS.md).
 
-**MCP + AI-agentit (ei korpustietoa oletuksena):** [AGENTS.md](AGENTS.md) → [docs/MCP_AGENT_OHJE.md](docs/MCP_AGENT_OHJE.md) (`zt_status`, kysymyksen muotoilu, milloin ylläpito säätää hakuprofiilia / `query_hard_profile.py`).
+**MCP + AI-agentit (ei korpustietoa oletuksena):** [AGENTS.md](AGENTS.md) → [docs/ZT_QUERY_BEST_PRACTICES.md](docs/ZT_QUERY_BEST_PRACTICES.md), [docs/MCP_AGENT_OHJE.md](docs/MCP_AGENT_OHJE.md). **EPUB-ingest:** [docs/INGEST_EPUB.md](docs/INGEST_EPUB.md). **cli-bot (retrieve + export):** [docs/CLI_BOT_DATABANK.md](docs/CLI_BOT_DATABANK.md), [docs/ZT-RETRIEVE-JSON.md](docs/ZT-RETRIEVE-JSON.md) — `zt_cli retrieve` / `python -m devworkflow.zt_retrieve`, `export-linux`, CI-build [`build-zt-retrieve.yml`](.github/workflows/build-zt-retrieve.yml).
 
 **AMD GPU:** [docs/PODMAN_AMD_GPU_SUUNNITELMA.md](docs/PODMAN_AMD_GPU_SUUNNITELMA.md) — hybridi (ingest hostilla) tai **Podman GPU-liput** (`create-mcp-agent --podman-gpu amd`) + valinnainen ROCm-image.
 

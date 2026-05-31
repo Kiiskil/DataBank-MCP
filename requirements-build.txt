@@ -1,0 +1,2 @@
+# CI / paikallinen zt-retrieve -bundle build
+pyinstaller>=6.10.0

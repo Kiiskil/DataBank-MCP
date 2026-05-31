@@ -5,36 +5,17 @@ import json
 import os
 import uuid
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from devworkflow.zt_rag.chunk_record import ChunkRecord
 from devworkflow.zt_rag.chunking import ChunkConfig, chunk_text
 from devworkflow.zt_rag.ingest_parse_worker import parse_source_file
-from devworkflow.zt_rag.parsers import ParsedDocument, detect_type
+from devworkflow.zt_rag.parsers import ParsedDocument, _format_heading_path, detect_type
 from devworkflow.zt_rag.source_manifest import Manifest, SourceStatus
 from devworkflow.zt_rag.storage_layout import StoragePaths
 from devworkflow.zt_rag.versioning import content_hash, file_sha256, normalize_for_match
-
-
-@dataclass
-class ChunkRecord:
-    chunk_id: str
-    source_id: str
-    source_hash: str
-    chunk_hash: str
-    title: str
-    section: str
-    page: int | None
-    chunk_index: int
-    char_start: int
-    char_end: int
-    text: str
-
-    def to_json_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        return d
 
 
 def _now_iso() -> str:
@@ -147,6 +128,7 @@ def ingest_active_sources(
             doc = ParsedDocument(
                 title=str(res.get("title") or ""),
                 sections=list(res.get("sections") or []),
+                lang=str(res.get("lang") or ""),
             )
             cfg = ChunkConfig()
             char_cursor = 0
@@ -159,8 +141,27 @@ def ingest_active_sources(
                 txt = str(sec.get("text", ""))
                 if not txt.strip():
                     continue
-                section_blob = f"## {heading}\n{txt}" if heading else txt
-                section_label = heading if heading else "body"
+                raw_path = sec.get("heading_path")
+                if isinstance(raw_path, list):
+                    path_str = _format_heading_path([str(x) for x in raw_path])
+                else:
+                    path_str = str(raw_path or "").strip()
+                sec_lang = str(sec.get("lang") or doc.lang or "").strip()
+                section_label = path_str if path_str else (heading if heading else "body")
+                breadcrumb_parts: list[str] = []
+                if doc.title:
+                    breadcrumb_parts.append(doc.title)
+                if path_str:
+                    breadcrumb_parts.append(path_str)
+                breadcrumb = " > ".join(breadcrumb_parts)
+                if breadcrumb and heading:
+                    section_blob = f"{breadcrumb}\n\n## {heading}\n{txt}"
+                elif breadcrumb:
+                    section_blob = f"{breadcrumb}\n\n{txt}"
+                elif heading:
+                    section_blob = f"## {heading}\n{txt}"
+                else:
+                    section_blob = txt
                 raw_chunks = chunk_text(section_blob, cfg)
                 for ch in raw_chunks:
                     norm = normalize_for_match(ch)
@@ -178,6 +179,8 @@ def ingest_active_sources(
                         char_start=char_cursor,
                         char_end=char_cursor + len(ch),
                         text=ch,
+                        heading_path=path_str,
+                        lang=sec_lang,
                     )
                     char_cursor += len(ch) + 2
                     chunk_idx += 1
